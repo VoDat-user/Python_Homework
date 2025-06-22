@@ -1,13 +1,5 @@
 def kiem_tra_doi_xung(chuoi):
-    """
-    Kiểm tra xem chuỗi có đối xứng không.
-    
-    Args:
-        chuoi: Chuỗi cần kiểm tra
-        
-    Returns:
-        bool: True nếu chuỗi đối xứng, False nếu không
-    """
+
     # Loại bỏ khoảng trắng và chuyển về chữ thường
     chuoi = chuoi.lower().replace(" ", "")
     

@@ -4,17 +4,7 @@ def doc_so_mot_chu_so(n):
     return chu_so[n]
 
 def doc_so_ba_chu_so(n):
-    """
-    Chuyển số có 3 chữ số thành chữ
-    
-    Args:
-        n: số nguyên có 3 chữ số (100-999)
-    Returns:
-        str: Chuỗi mô tả số đó bằng chữ
-    """
-    if not (100 <= n <= 999):
-        return "Số không hợp lệ. Vui lòng nhập số có 3 chữ số!"
-    
+
     # Tách các chữ số
     tram = n // 100
     chuc = (n % 100) // 10

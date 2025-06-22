@@ -1,14 +1,5 @@
 def tach_so_tu_chuoi(chuoi):
-    """
-    Tách các số từ một chuỗi thành một mảng số nguyên.
 
-    Args:
-        chuoi: Chuỗi đầu vào.
-
-    Returns:
-        Một mảng chứa các số nguyên được tìm thấy trong chuỗi,
-        hoặc một mảng rỗng nếu không tìm thấy số nào.
-    """
     so_trong_chuoi = []
     for ky_tu in chuoi:
         if ky_tu.isdigit():

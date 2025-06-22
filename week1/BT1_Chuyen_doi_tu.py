@@ -3,7 +3,7 @@
 import sys
 import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-def convert_text(text):
+def convert_text(text): 
     # Tách câu bằng dấu chấm
     sentences = text.split('.')
     result = []
