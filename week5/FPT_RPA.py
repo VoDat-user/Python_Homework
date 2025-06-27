@@ -14,9 +14,15 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-DOWNLOAD_DIR = os.path.join(os.getcwd(), "Downloads")
-INPUT_FILE = "input.xlsx"
-OUTPUT_FILE = "output.xlsx"
+# Đảm bảo lấy đúng thư mục chứa script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DOWNLOAD_DIR = os.path.join(SCRIPT_DIR, "Downloads")
+INPUT_FILE = os.path.join(SCRIPT_DIR, "input.xlsx")
+OUTPUT_FILE = os.path.join(SCRIPT_DIR, "output.xlsx")
+
+# Tạo thư mục Downloads nếu chưa có
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
 
 # Đọc và chuẩn hóa file input
 def read_input():
@@ -28,7 +34,6 @@ def read_input():
             'Mã tra cứu': 'MaTraCuu',
             'URL': 'URL'
         })
-
         # Loại bỏ dòng không hợp lệ
         df = df.dropna(subset=['MST', 'MaTraCuu', 'URL'])
         df = df[~df['MaTraCuu'].astype(str).str.contains("không tìm thấy", case=False)]
@@ -47,7 +52,7 @@ def setup_driver(download_path):
             "download.prompt_for_download": False,
             "directory_upgrade": True
         })
-        chrome_options.add_argument("--headless=new")
+        # chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--window-size=1920,1080")
         driver = webdriver.Chrome(options=chrome_options)
         logging.info("Khởi tạo trình duyệt thành công.")
@@ -61,16 +66,21 @@ def tra_cuu_fpt(driver, mst, matra):
     try:
         driver.get("https://tracuuhoadon.fpt.com.vn/search.html")
         time.sleep(2)
-        driver.find_element(By.ID, "txtTaxCode").send_keys(mst)
-        driver.find_element(By.ID, "txtInvoiceCode").send_keys(matra)
-        driver.find_element(By.ID, "btnSearch").click()
+        driver.find_element(By.XPATH, '//input[@placeholder="MST bên bán"]').send_keys(mst)
+        driver.find_element(By.XPATH, '//input[@placeholder="Mã tra cứu hóa đơn"]').send_keys(matra)
+        driver.find_element(By.XPATH, '//button[contains(text(), "Tra cứu")]').click()
         time.sleep(3)
-
-        download_button = driver.find_element(By.XPATH, "//a[contains(@href,'.xml')]")
-        if download_button:
-            download_button.click()
-            logging.info(f"Tra cứu FPT thành công: {mst} | {matra}")
-            return True
+        # Thử tìm nút tải XML
+        try:
+            download_button = driver.find_element(By.XPATH, "//a[contains(@href,'.xml')]")
+            if download_button:
+                download_button.click()
+                logging.info(f"Đã click nút tải XML cho: {mst} | {matra}")
+                return True
+        except Exception as e:
+            logging.warning(f"Không tìm thấy nút tải XML: {e}")
+            return False
+        logging.info(f"Tra cứu FPT thành công: {mst} | {matra}")
     except Exception as e:
         logging.warning(f"Lỗi tra cứu FPT với {mst} | {matra}: {e}")
         return False
@@ -125,44 +135,45 @@ def main():
 
     output_data = []
 
-    for idx, row in input_data.iterrows():
-        mst = str(row['MST'])
-        matra = str(row['MaTraCuu'])
-        url = str(row['URL']).lower()
+    try:
+        for idx, row in input_data.iterrows():
+            mst = str(row['MST'])
+            matra = str(row['MaTraCuu'])
+            url = str(row['URL']).lower()
 
-        logging.info(f"🔍 Đang tra cứu: {mst} | {matra} | {url}")
+            logging.info(f"Đang tra cứu: {mst} | {matra} | {url}")
 
-        if "tracuuhoadon.fpt.com.vn" in url:
-            success = tra_cuu_fpt(driver, mst, matra)
-        else:
-            logging.warning(f"⚠️ URL không hỗ trợ: {url}")
-            success = False
-
-        time.sleep(2)
-
-        if success:
-            time.sleep(5)
-            xml_path = get_latest_xml_file(DOWNLOAD_DIR)
-            if xml_path:
-                parsed = parse_xml(xml_path)
-                parsed.update({'MST': mst, 'MaTraCuu': matra, 'Status': 'OK', 'URL': url})
-                output_data.append(parsed)
-                try:
-                    os.remove(xml_path)
-                except Exception as e:
-                    logging.warning(f"Không xóa được file XML {xml_path}: {e}")
+            if "tracuuhoadon.fpt.com.vn" in url:
+                success = tra_cuu_fpt(driver, mst, matra)
             else:
-                logging.warning("Không tìm thấy file XML.")
-                output_data.append({'MST': mst, 'MaTraCuu': matra, 'Status': 'Fail', 'URL': url})
-        else:
-            output_data.append({'MST': mst, 'MaTraCuu': matra, 'Status': 'Fail', 'URL': url})
+                logging.warning(f"URL không hỗ trợ: {url}")
+                success = False
 
-    driver.quit()
+            time.sleep(2)
+
+            if success:
+                time.sleep(10)  # tăng thời gian chờ tải file
+                xml_path = get_latest_xml_file(DOWNLOAD_DIR)
+                if xml_path:
+                    parsed = parse_xml(xml_path)
+                    parsed.update({'MST': mst, 'MaTraCuu': matra, 'Status': 'OK', 'URL': url})
+                    output_data.append(parsed)
+                    try:
+                        os.remove(xml_path)
+                    except Exception as e:
+                        logging.warning(f"Không xóa được file XML {xml_path}: {e}")
+                else:
+                    logging.warning("Không tìm thấy file XML.")
+                    output_data.append({'MST': mst, 'MaTraCuu': matra, 'Status': 'Fail', 'URL': url})
+            else:
+                output_data.append({'MST': mst, 'MaTraCuu': matra, 'Status': 'Fail', 'URL': url})
+    finally:
+        driver.quit()
 
     try:
         df_out = pd.DataFrame(output_data)
         df_out.to_excel(OUTPUT_FILE, index=False)
-        logging.info("✅ Xuất file output hoàn tất.")
+        logging.info("Xuất file output hoàn tất.")
     except Exception as e:
         logging.error(f"Lỗi ghi file output: {e}")
 
