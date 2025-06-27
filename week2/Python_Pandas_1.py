@@ -6,12 +6,12 @@ data = {
              "Nguyen Van A", "Nguyen Van A", "Nguyen Van B", "Nguyen Van C", 
              "Nguyen Van D", "Nguyen Van E", "Nguyen Van F"],
 
-    "Age": [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],  # Changed to integers
+    "Age": [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
 
     "Gender": ["Male", "Male", "Male", "Female", "Male", 
                "Female", "Male", "Female", "Male", "Female"],
 
-    "Score": [9.0, 8.5, 7.5, 6.0, 4.5, 8.0, 7.0, 6.5, 9.2, 3.8]  # Changed to floats
+    "Score": [9.0, 8.5, 7.5, 6.0, 4.5, 8.0, 7.0, 6.5, 9.2, 3.8]  
 }
 
 # Tạo DataFrame từ dictionary

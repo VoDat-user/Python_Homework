@@ -1,0 +1,5 @@
+chromedriver.exe
+
+#lưu file FDP 
+*.pdf
+*.PDF

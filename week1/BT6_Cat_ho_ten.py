@@ -3,13 +3,7 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 def cat_ho_ten(hoten):
-    """
-    Cắt chuỗi họ tên thành họ lót và tên
-    Args:
-        hoten: Chuỗi họ tên đầy đủ
-    Returns:
-        tuple: (ho_lot, ten) - họ lót và tên riêng biệt
-    """
+    
     slist = hoten.split()
     n = len(slist)
     
