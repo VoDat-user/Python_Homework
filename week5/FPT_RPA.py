@@ -5,7 +5,10 @@ import xml.etree.ElementTree as ET
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import logging
+import glob
 
 # Cấu hình logging
 logging.basicConfig(
@@ -27,18 +30,21 @@ if not os.path.exists(DOWNLOAD_DIR):
 # Đọc và chuẩn hóa file input
 def read_input():
     try:
-        df = pd.read_excel(INPUT_FILE)
+        df = pd.read_excel(
+            INPUT_FILE,
+            dtype={'Mã số thuế': str, 'Mã tra cứu': str}
+        )
         df.columns = [col.strip() for col in df.columns]
         df = df.rename(columns={
             'Mã số thuế': 'MST',
             'Mã tra cứu': 'MaTraCuu',
             'URL': 'URL'
         })
-        # Loại bỏ dòng không hợp lệ
-        df = df.dropna(subset=['MST', 'MaTraCuu', 'URL'])
-        df = df[~df['MaTraCuu'].astype(str).str.contains("không tìm thấy", case=False)]
-        logging.info("Đọc và chuẩn hóa input thành công.")
-        return df[['MST', 'MaTraCuu', 'URL']]
+        # Đảm bảo các trường MST và MaTraCuu là chuỗi, loại bỏ .0 nếu có
+        df['MST'] = df['MST'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        df['MaTraCuu'] = df['MaTraCuu'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+        logging.info("Đọc toàn bộ input thành công.")
+        return df
     except Exception as e:
         logging.error(f"Lỗi đọc file input: {e}")
         raise
@@ -50,7 +56,9 @@ def setup_driver(download_path):
         chrome_options.add_experimental_option("prefs", {
             "download.default_directory": download_path,
             "download.prompt_for_download": False,
-            "directory_upgrade": True
+            "directory_upgrade": True,
+            "safebrowsing.enabled": True,
+            "safebrowsing.disable_download_protection": True
         })
         # chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--window-size=1920,1080")
@@ -69,20 +77,86 @@ def tra_cuu_fpt(driver, mst, matra):
         driver.find_element(By.XPATH, '//input[@placeholder="MST bên bán"]').send_keys(mst)
         driver.find_element(By.XPATH, '//input[@placeholder="Mã tra cứu hóa đơn"]').send_keys(matra)
         driver.find_element(By.XPATH, '//button[contains(text(), "Tra cứu")]').click()
-        time.sleep(3)
-        # Thử tìm nút tải XML
+        time.sleep(5)  # tăng thời gian chờ
+
         try:
-            download_button = driver.find_element(By.XPATH, "//a[contains(@href,'.xml')]")
+            # Sửa selector cho đúng nút "Tải XML"
+            download_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Tải XML')]")
             if download_button:
                 download_button.click()
                 logging.info(f"Đã click nút tải XML cho: {mst} | {matra}")
+                print(f"Đã click nút tải XML cho: {mst} | {matra}")
                 return True
         except Exception as e:
             logging.warning(f"Không tìm thấy nút tải XML: {e}")
+            print(f"Không tìm thấy nút tải XML cho: {mst} | {matra} | {driver.current_url}")
             return False
-        logging.info(f"Tra cứu FPT thành công: {mst} | {matra}")
     except Exception as e:
         logging.warning(f"Lỗi tra cứu FPT với {mst} | {matra}: {e}")
+        print(f"Lỗi tra cứu FPT với {mst} | {matra}: {e}")
+        return False
+    return False
+
+# Tra cứu MeInvoice
+def tra_cuu_meinvoice(driver, mst, matra):
+    try:
+        driver.get("https://www.meinvoice.vn/tra-cuu/")
+        time.sleep(2)
+        driver.find_element(By.NAME, "txtCode").clear()
+        driver.find_element(By.NAME, "txtCode").send_keys(matra)
+        driver.find_element(By.ID, "btnSearchInvoice").click()
+        time.sleep(3)
+        try:
+            # Bước 1: Click nút "Tải hóa đơn" để hiện menu
+            btn_download = driver.find_element(By.CSS_SELECTOR, "span.download-invoice")
+            btn_download.click()
+            time.sleep(1)  # Đợi menu xổ ra
+
+            # Bước 2: Click nút "Tải hóa đơn dạng XML"
+            download_button = driver.find_element(By.CSS_SELECTOR, "div.dm-item.xml.txt-download-xml")
+            if download_button:
+                download_button.click()
+                logging.info(f"Đã click nút tải XML cho mã tra cứu: {matra}")
+                print(f"Đã click nút tải XML cho mã tra cứu: {matra}")
+                return True
+        except Exception as e:
+            logging.warning(f"Không tìm thấy nút tải XML trên meinvoice.vn: {e}")
+            print(f"Không tìm thấy nút tải XML trên meinvoice.vn cho: {matra} | {driver.current_url}")
+            return False
+    except Exception as e:
+        logging.warning(f"Lỗi tra cứu MeInvoice với {mst} | {matra}: {e}")
+        print(f"Lỗi tra cứu MeInvoice với {mst} | {matra}: {e}")
+        return False
+    return False
+
+# Tra cứu VNEHoadon
+def tra_cuu_vanehoadon(driver, mst, matra):
+    try:
+        url = f"https://van.ehoadon.vn/TCHD?MTC={matra}"
+        driver.get(url)
+        time.sleep(3)
+        try:
+            btn_download = driver.find_element(By.ID, "btnDownload")
+            btn_download.click()
+            try:
+                download_button = WebDriverWait(driver, 5).until(
+                    EC.visibility_of_element_located((By.ID, "LinkDownXML"))
+                )
+                download_button.click()
+                logging.info(f"Đã click nút tải XML cho mã tra cứu: {matra}")
+                print(f"Đã click nút tải XML cho mã tra cứu: {matra}")
+                return True
+            except Exception:
+                logging.warning("Không tìm thấy nút LinkDownXML sau khi mở menu.")
+                print(f"Không tìm thấy nút tải XML trên van.ehoadon.vn cho: {matra} | {driver.current_url}")
+                return False
+        except Exception as e:
+            logging.warning(f"Không tìm thấy nút tải XML trên van.ehoadon.vn: {e}")
+            print(f"Không tìm thấy nút tải XML trên van.ehoadon.vn cho: {matra} | {driver.current_url}")
+            return False
+    except Exception as e:
+        logging.warning(f"Lỗi tra cứu van.ehoadon.vn với mã tra cứu {matra}: {e}")
+        print(f"Lỗi tra cứu van.ehoadon.vn với mã tra cứu {matra}: {e}")
         return False
     return False
 
@@ -102,22 +176,42 @@ def parse_xml(file_path):
     try:
         tree = ET.parse(file_path)
         root = tree.getroot()
-        ns = {'ns': root.tag.split('}')[0].strip('{')}
-        data = {
-            'SoHoaDon': root.findtext('.//ns:SoHoaDon', default='', namespaces=ns),
-            'DonViBanHang': root.findtext('.//ns:TenDonVi', default='', namespaces=ns),
-            'MST_Ban': root.findtext('.//ns:MSTDonVi', default='', namespaces=ns),
-            'DiaChiBan': root.findtext('.//ns:DiaChiDonVi', default='', namespaces=ns),
-            'STK_Ban': root.findtext('.//ns:SoTaiKhoan', default='', namespaces=ns),
-            'NguoiMua': root.findtext('.//ns:TenNguoiMua', default='', namespaces=ns),
-            'DiaChiMua': root.findtext('.//ns:DiaChiNguoiMua', default='', namespaces=ns),
-            'MST_Mua': root.findtext('.//ns:MSTNguoiMua', default='', namespaces=ns)
-        }
-        logging.info(f"Đọc file XML thành công: {file_path}")
+        data = {}
+        # Lấy thông tin hóa đơn
+        dlhdon = root.find('.//DLHDon')
+        if dlhdon is not None:
+            ttchung = dlhdon.find('TTChung')
+            if ttchung is not None:
+                data['SoHoaDon'] = ttchung.findtext('SHDon', default='')
+            ndhdon = dlhdon.find('NDHDon')
+            if ndhdon is not None:
+                nban = ndhdon.find('NBan')
+                if nban is not None:
+                    data['DonViBanHang'] = nban.findtext('Ten', default='')
+                    data['MST_Ban'] = nban.findtext('MST', default='')
+                    data['DiaChiBan'] = nban.findtext('DChi', default='')
+                    data['STK_Ban'] = nban.findtext('STKNHang', default='')
+                nmua = ndhdon.find('NMua')
+                if nmua is not None:
+                    data['NguoiMua'] = nmua.findtext('Ten', default='')
+                    data['DiaChiMua'] = nmua.findtext('DChi', default='')
+                    data['MST_Mua'] = nmua.findtext('MST', default='')
         return data
     except Exception as e:
         logging.error(f"Lỗi đọc XML {file_path}: {e}")
         return {}
+
+def wait_for_xml_file(download_dir, timeout=30):
+    """Chờ file XML xuất hiện và hoàn tất tải về."""
+    waited = 0
+    while waited < timeout:
+        xml_files = glob.glob(os.path.join(download_dir, "*.xml"))
+        downloading = glob.glob(os.path.join(download_dir, "*.crdownload"))
+        if xml_files and not downloading:
+            return xml_files[0]
+        time.sleep(1)
+        waited += 1
+    return None
 
 # Chương trình chính
 def main():
@@ -142,26 +236,37 @@ def main():
             url = str(row['URL']).lower()
 
             logging.info(f"Đang tra cứu: {mst} | {matra} | {url}")
+            success = False
 
-            if "tracuuhoadon.fpt.com.vn" in url:
-                success = tra_cuu_fpt(driver, mst, matra)
+            if not url or pd.isna(url):
+                logging.warning(f"URL trống hoặc không hợp lệ cho MST: {mst}")
+            elif "tracuuhoadon.fpt.com.vn" in url:
+                try:
+                    success = tra_cuu_fpt(driver, mst, matra)
+                except Exception as e:
+                    logging.error(f"Lỗi khi tra cứu FPT: {e}")
+            elif "meinvoice.vn" in url:
+                try:
+                    success = tra_cuu_meinvoice(driver, mst, matra)
+                except Exception as e:
+                    logging.error(f"Lỗi khi tra cứu meinvoice.vn: {e}")
+            elif "van.ehoadon.vn" in url:
+                try:
+                    success = tra_cuu_vanehoadon(driver, mst, matra)
+                except Exception as e:
+                    logging.error(f"Lỗi khi tra cứu van.ehoadon.vn: {e}")
             else:
-                logging.warning(f"URL không hỗ trợ: {url}")
-                success = False
+                logging.warning(f"URL không được hỗ trợ: {url}")
 
             time.sleep(2)
 
             if success:
-                time.sleep(10)  # tăng thời gian chờ tải file
-                xml_path = get_latest_xml_file(DOWNLOAD_DIR)
+                xml_path = wait_for_xml_file(DOWNLOAD_DIR, timeout=30)
                 if xml_path:
                     parsed = parse_xml(xml_path)
                     parsed.update({'MST': mst, 'MaTraCuu': matra, 'Status': 'OK', 'URL': url})
                     output_data.append(parsed)
-                    try:
-                        os.remove(xml_path)
-                    except Exception as e:
-                        logging.warning(f"Không xóa được file XML {xml_path}: {e}")
+                    # os.remove(xml_path)  # <-- Bỏ hoặc comment dòng này để giữ lại file XML
                 else:
                     logging.warning("Không tìm thấy file XML.")
                     output_data.append({'MST': mst, 'MaTraCuu': matra, 'Status': 'Fail', 'URL': url})
